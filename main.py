@@ -1,53 +1,61 @@
-import matplotlib.pyplot as plt
-import numpy as np
+import concurrent.futures
+import warnings
+from datetime import datetime
+
 import pandas as pd
-import seaborn as sns
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+from meteostat import Hourly, Point
+from tqdm import tqdm  # Import tqdm for the progress bar
 
-df = pd.read_csv(
-    'dataset/driver_behavior_route_anomaly_dataset_with_derived_features.csv'
-)
+# Load the dataset
+data = pd.read_csv('dataset/EVChargingStationUsage.csv')
 
-df.columns = df.columns.str.strip()
-print(df.columns)
+# Function to truncate datetime to the hour
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
-print(df['weather_conditions'])
 
-df = pd.get_dummies(
-    df,
-    columns=[
-        'weather_conditions', 'road_type', 'traffic_condition'
-    ],
-    drop_first=True
-)
+def truncate_to_hour(date_time_str):
+    date_time_str = date_time_str.split(":")[0]  # Keep only "7/29/2011 20"
+    # Convert the given date and time to a datetime object (ignore minutes)
+    start_time = datetime.strptime(date_time_str, "%m/%d/%Y %H")
+    return start_time
 
-# print(df.info())
-# print(df.describe())
-# print(df.head())
+# Function to fetch weather data for a given location and time
 
-features = ['speed', 'acceleration', 'steering_angle', 'heading', 'trip_duration',
-            'trip_distance', 'fuel_consumption', 'rpm', 'brake_usage', 'lane_deviation',
-            'stop_events', 'acceleration_variation', 'behavioral_consistency_index']
 
-scaler = StandardScaler()
-df_scaled = scaler.fit_transform(df[features])
+def fetch_weather(lat, lon, date_time):
+    date_time_hourly = truncate_to_hour(date_time)
+    location = Point(lat, lon)
+    weather = Hourly(location, date_time_hourly, date_time_hourly).fetch()
+    if not weather.empty:
+        # Convert the first row of data to a dictionary
+        return weather.iloc[0].to_dict()
+    else:
+        # Return None for missing data
+        return {"temp": None, "rhum": None, "prcp": None}
 
-print("\nStandardized df:")
+# Function to fetch weather data in parallel
 
-pca = PCA(n_components=2)  # Reduce to 2 components for visualization
-X_pca = pca.fit_transform(df_scaled)
 
-# Create a DataFrame for the PCA components
-pca_df = pd.DataFrame(X_pca, columns=['PC1', 'PC2'])
+def fetch_weather_concurrently(row):
+    return fetch_weather(row["Latitude"], row["Longitude"], row["Start Date"])
 
-# Display explained variance ratio
-print(f'Explained Variance Ratio: {pca.explained_variance_ratio_}')
 
-# plt.scatter(pca_df['PC1'], pca_df['PC2'])
-# plt.title('PCA of Vehicle Trip Data')
-# plt.xlabel('Principal Component 1')
-# plt.ylabel('Principal Component 2')
-# plt.show()
+# Use ThreadPoolExecutor to fetch weather data in parallel with a progress bar
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    # Wrap the executor.map with tqdm for a progress bar
+    weather_data = list(tqdm(executor.map(fetch_weather_concurrently, [row for _, row in data.iterrows()]),
+                             total=len(data),
+                             desc="Fetching weather data",
+                             ncols=100))
 
-print(f'PCA Components:\n{pca.components_}')
+# Create a DataFrame from the weather data
+weather_df = pd.json_normalize(weather_data)
+
+# Add weather data to the original DataFrame
+df = pd.concat([data, weather_df], axis=1)
+
+# Save the updated DataFrame with weather data to a CSV file
+df.to_csv('dataset/EVChargingWithWeather.csv', index=False)
+
+# Print the head of the DataFrame to verify
+print(df.head())
