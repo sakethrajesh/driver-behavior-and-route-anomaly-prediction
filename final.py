@@ -11,7 +11,7 @@ from sklearn.metrics import classification_report, confusion_matrix, mean_square
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from statsmodels.stats.outliers_influence import variance_inflation_factor
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import accuracy_score
 
@@ -46,7 +46,7 @@ standardized_scaler = StandardScaler()
 
 def clean_data():
     df = pd.read_csv('dataset/EVChargingWithWeather.csv')
-    df = df.head(50000)
+    df = df.head(500)
 
     # Convert time-based features to seconds
     df['Total Duration (seconds)'] = pd.to_timedelta(
@@ -91,9 +91,24 @@ def clean_data():
     
     return df
 
+def get_train_test_df(df, target, feature_selection_method=None):
+    y = df[target]
+    y = np.argmax(y, axis=1)
+    X = df.drop(target, axis=1)
+    
+    pattern = '^Ended By_'
+    columns_to_drop = X.filter(regex=pattern).columns
+    X.drop(columns=columns_to_drop, axis=1, inplace=True)
+
+    if feature_selection_method:
+        X = feature_selection_method(X)
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    
+    return X_train, X_test, y_train, y_test
+
 # Feature Selection Using Random Forest
 def random_forest(df, target='Energy (kWh)'):
-    print(df.columns)
     X = df.drop(columns=[target])
     y = df[target]
 
@@ -192,12 +207,10 @@ def vif(df):
 
 # Perform Regression
 def do_regression(df, target, feature_selection_method=None):
-    print(df.columns, flush=True)
-    # Separate target before feature selection
-    y = df[target]
-    df = df.drop(columns=[target])  # Remove target from features
 
-    # Apply feature selection method
+    y = df[target]
+    df = df.drop(columns=[target])
+
     if feature_selection_method:
         df = feature_selection_method(df)
 
@@ -213,23 +226,23 @@ def do_regression(df, target, feature_selection_method=None):
         X, y, test_size=0.2, random_state=42
     )
 
-    # Add a constant term for intercept
-    X_train_sm = sm.add_constant(X_train)
-    X_test_sm = sm.add_constant(X_test)
+    # Initialize the Linear Regression model
+    model = LinearRegression()
 
     # Train the regression model
-    model = sm.OLS(y_train, X_train_sm).fit()
+    model.fit(X_train, y_train)
 
-    # Print the model summary
-    print(model.summary())
+    # Print model coefficients (Optional)
+    print(f"Coefficients: {model.coef_}")
+    print(f"Intercept: {model.intercept_}")
 
     # Predict on test data
-    y_pred = model.predict(X_test_sm)
+    y_pred = model.predict(X_test)
 
     # Plot Actual vs Predicted
     plt.figure(figsize=(10, 6))
     plt.plot(y_test.values, label="Actual", marker="o")
-    plt.plot(y_pred.values, label="Predicted", marker="x")
+    plt.plot(y_pred, label="Predicted", marker="x")
     plt.legend()
     plt.title("Actual vs Predicted")
     plt.xlabel("Sample")
@@ -243,22 +256,8 @@ def do_regression(df, target, feature_selection_method=None):
     return model
 
 def multinomial_logistic_regression(df, target, feature_selection_method=None):
-    for i in range(len(target)):
-        print(df[target[i]].value_counts())
-        
-    print()
     
-    # Separate features and target
-    y = df[target]  # Assuming `target` is a list of one-hot encoded columns
-    X = df.drop(target, axis=1)
-    
-    # Convert one-hot encoded target to single class labels
-    if isinstance(y, pd.DataFrame):  # Check if y is a DataFrame (for multi-column targets)
-        y = y.idxmax(axis=1)  # Converts one-hot encoding back to class labels
-    
-        
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    X_train, X_test, y_train, y_test = get_train_test_df(df, target)
     
     # Initialize multinomial logistic regression model
     logModel = LogisticRegression()
@@ -290,28 +289,10 @@ def multinomial_logistic_regression(df, target, feature_selection_method=None):
 
 def random_forest_classification(df, target, feature_selection_method=None, method=None):
     
-    df.drop(['Ended By_Door', 'Ended By_Door Closed', 'Ended By_Door Open',
-       'Ended By_Final 4-strikes GFCI trip', 'Ended By_Final GFCI Tripped',
-       'Ended By_Holster Plugin', 'Ended By_OCD',
-       'Ended By_Outlet Unreachable', 'Ended By_Plug Out at Station',
-       'Ended By_Plug Removed While Rebooting',
-       'Ended By_Unknown'], axis=1, inplace=True)
-
-    # Separate features and target
-    y = df[target]  # Assuming `target` is a list of one-hot encoded columns
-    y = np.argmax(y, axis=1)  # Convert one-hot encoded columns to single column of class labels
-    X = df.drop(target, axis=1)
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+    X_train, X_test, y_train, y_test = get_train_test_df(df, target)
 
     # Bagging-specific parameter grid
     param_grid = {
-        # Bagging-specific parameters
-        'n_estimators': [10, 50],  # Number of bagging iterations
-        'max_samples': [0.5, 1.0],  # Fraction of samples for each bag
-        'max_features': [0.5, 1.0],  # Fraction of features for each bag
-        'bootstrap': [True, False],  # Bootstrapping or not
-        
         # Base model parameters prefixed with `estimator__`
         'estimator__n_estimators': [int(x) for x in np.linspace(start=10, stop=80, num=10)],
         'estimator__max_features': ['auto', 'sqrt'],
@@ -323,9 +304,14 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
     
     rf_Model = RandomForestClassifier()
     
-    
     if method == 'bagging':
         rf_Model = BaggingClassifier(estimator=rf_Model)
+        param_grid.update({
+            'n_estimators': [10, 50],  # Number of bagging iterations
+            'max_samples': [0.5, 1.0],  # Fraction of samples for each bag
+            'max_features': [0.5, 1.0],  # Fraction of features for each bag
+            'bootstrap': [True, False],  # Bootstrapping or not
+        })
     
     elif method == 'boosting':
         rf_Model = AdaBoostClassifier(estimator=rf_Model)
@@ -344,15 +330,8 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
     
 
 def naive_bayes_classification(df, target, feature_selection_method=None):
-    # Separate features and target
-    y = df[target]
-    y = np.argmax(y, axis=1)
-    X = df.drop(target, axis=1)
     
-    if feature_selection_method:
-        X = feature_selection_method(X)
-        
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+    X_train, X_test, y_train, y_test = get_train_test_df(df, target)
 
     model = GaussianNB()
     
@@ -369,15 +348,7 @@ def naive_bayes_classification(df, target, feature_selection_method=None):
     
 
 def knn_classification(df, target, feature_selection_method=None):
-    # Separate features and target
-    y = df[target]
-    y = np.argmax(y, axis=1)
-    X = df.drop(target, axis=1)
-    
-    if feature_selection_method:
-        X = feature_selection_method(X)
-        
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+    X_train, X_test, y_train, y_test = get_train_test_df(df, target)
 
     knn = KNeighborsClassifier()
     
@@ -410,15 +381,7 @@ def knn_classification(df, target, feature_selection_method=None):
    
     
 def svn_classification(df, target, feature_selection_method=None):
-    # Separate features and target
-    y = df[target]
-    y = np.argmax(y, axis=1)
-    X = df.drop(target, axis=1)
-    
-    if feature_selection_method:
-        X = feature_selection_method(X)
-        
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+    X_train, X_test, y_train, y_test = get_train_test_df(df, target)
 
     # Initialize the model
     model = SVC()
@@ -458,18 +421,7 @@ def svn_classification(df, target, feature_selection_method=None):
 
 df = clean_data()
 
-# for i in ['Ended By_Customer', 'Ended By_Door', 'Ended By_Door Closed', 'Ended By_Door Open',
-#        'Ended By_Final 4-strikes GFCI trip', 'Ended By_Final GFCI Tripped',
-#        'Ended By_Holster Plugin', 'Ended By_OCD',
-#        'Ended By_Outlet Unreachable', 'Ended By_Plug Out at Station',
-#        'Ended By_Plug Out at Vehicle', 'Ended By_Plug Removed While Rebooting',
-#        'Ended By_Unknown']:
-#     print(df[i].value_counts())
-#     print()
-
-
-
-# do_regression(df, 'Energy (kWh)', feature_selection_method=vif)
+do_regression(df, 'Energy (kWh)', feature_selection_method=None)
 
 # random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='stacking')
 
@@ -479,4 +431,4 @@ df = clean_data()
 
 # knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+# svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
