@@ -6,3 +6,4 @@ matplotlib
 scipy
 tabulate
 meteostat
+statsmodels
