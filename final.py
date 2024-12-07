@@ -2,10 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 import statsmodels.api as sm
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.ensemble import AdaBoostClassifier, BaggingClassifier, GradientBoostingClassifier, RandomForestClassifier, RandomForestRegressor, StackingClassifier
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import classification_report, confusion_matrix, mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -41,73 +43,6 @@ drop_features = [
 standardized_scaler = StandardScaler()
 
 # Clean and Preprocess Data
-
-
-# def clean_data():
-#     global categorical_features
-#     global numerical_features
-
-#     # Load the CSV file
-#     df = pd.read_csv('dataset/EVChargingWithWeather.csv')
-
-#     df = df.head(500)  # For testing, limit rows
-
-#     # Convert time-based features to seconds
-#     df['Total Duration (seconds)'] = pd.to_timedelta(
-#         df['Total Duration (hh:mm:ss)']).dt.total_seconds()
-#     df['Charging Time (seconds)'] = pd.to_timedelta(
-#         df['Charging Time (hh:mm:ss)']).dt.total_seconds()
-
-#     # Convert datetime features
-#     datetime_columns = ['Start Date', 'End Date',
-#                         'Transaction Date (Pacific Time)']
-#     for col in datetime_columns:
-#         # Convert to pandas datetime
-#         df[col] = pd.to_datetime(df[col])
-
-#         # Generate timestamp
-#         df[f'{col}_timestamp'] = df[col].astype(
-#             'int64') // 1e9  # Seconds since epoch
-
-#         # Extract components
-#         df[f'{col}_year'] = df[col].dt.year.astype(float)
-#         df[f'{col}_month'] = df[col].dt.month.astype(float)
-#         df[f'{col}_day'] = df[col].dt.day.astype(float)
-#         df[f'{col}_hour'] = df[col].dt.hour.astype(float)
-#         df[f'{col}_minute'] = df[col].dt.minute.astype(float)
-#         df[f'{col}_second'] = df[col].dt.second.astype(float)
-#         df[f'{col}_day_of_week'] = df[col].dt.dayofweek.astype(float)  # Monday=0, Sunday=6
-#         df[f'{col}_is_weekend'] = df[col].dt.dayofweek.astype(float) >= 5
-
-#     # Update feature lists with generated datetime features
-#     numerical_features.extend([f'{col}_timestamp' for col in datetime_columns])
-#     numerical_features.extend([f'{col}_{comp}' for col in datetime_columns
-#                                for comp in ['year', 'month', 'day', 'hour', 'minute', 'second', 'day_of_week', 'is_weekend']])
-
-#     # Prepare categorical and numerical DataFrames
-#     categorical_df = df[categorical_features]
-#     numerical_df = df[numerical_features]
-
-#     # Handle categorical features
-#     categorical_df = pd.get_dummies(categorical_df, drop_first=True)
-
-#     # Handle missing values for numerical features
-#     numerical_df = numerical_df.fillna(numerical_df.mean())
-
-#     # Standardize numerical features
-#     numerical_df_scaled = pd.DataFrame(standardized_scaler.fit_transform(
-#         numerical_df), columns=numerical_df.columns)
-    
-#     numerical_features = numerical_df_scaled.columns
-    
-#     categorical_features = categorical_df.columns
-    
-
-#     # Combine processed categorical and numerical data
-#     df_processed = pd.concat([categorical_df, numerical_df_scaled], axis=1)
-    
-#     return df_processed
-
 
 def clean_data():
     df = pd.read_csv('dataset/EVChargingWithWeather.csv')
@@ -157,8 +92,6 @@ def clean_data():
     return df
 
 # Feature Selection Using Random Forest
-
-
 def random_forest(df, target='Energy (kWh)'):
     print(df.columns)
     X = df.drop(columns=[target])
@@ -178,9 +111,8 @@ def random_forest(df, target='Energy (kWh)'):
 
     return importance
 
+
 # Dimensionality Reduction Using PCA
-
-
 def pca(df):
     X = df.values
     pca = PCA()
@@ -399,9 +331,9 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
         rf_Model = AdaBoostClassifier(estimator=rf_Model)
     
     elif method == 'stacking':
-        rf_Model = StackingClassifier( estimators=[rf_Model] , final_estimator=rf_Model)
+        rf_Model = StackingClassifier(estimator=rf_Model, final_estimator=rf_Model)
     
-    rf_Grid = GridSearchCV(estimator = rf_Model, param_grid = {}, cv = 3, verbose=2, n_jobs = 4)
+    rf_Grid = GridSearchCV(estimator = rf_Model, param_grid = {}, cv = 3, verbose=2, n_jobs = -1)
     
     rf_Grid.fit(X_train, y_train)
     
@@ -435,6 +367,90 @@ def naive_bayes_classification(df, target, feature_selection_method=None):
     print(f'Train Accuracy - : {rf_Grid.score(X_train, y_train):.3f}')
     print(f'Test Accuracy - : {rf_Grid.score(X_test, y_test):.3f}')
     
+
+def knn_classification(df, target, feature_selection_method=None):
+    # Separate features and target
+    y = df[target]
+    y = np.argmax(y, axis=1)
+    X = df.drop(target, axis=1)
+    
+    if feature_selection_method:
+        X = feature_selection_method(X)
+        
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+
+    knn = KNeighborsClassifier()
+    
+    # Define the parameter grid
+    param_grid = {
+        'n_neighbors': [3, 5, 7, 9, 11],  # Number of neighbors
+        'weights': ['uniform', 'distance'],  # Weighting scheme
+        'metric': ['euclidean', 'manhattan', 'minkowski']  # Distance metrics
+    }
+
+    # Perform GridSearchCV
+    grid_search = GridSearchCV(estimator=knn, param_grid=param_grid, cv=5, verbose=2, n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+    
+    y_pred = grid_search.predict(X_test)
+
+    # Best parameters and model
+    best_knn = grid_search.best_estimator_
+    print(f"Best Parameters: {grid_search.best_params_}")
+    
+    # print(f'Train Accuracy - : {rf_Grid.score(X_train, y_train):.3f}')
+    # print(f'Test Accuracy - : {rf_Grid.score(X_test, y_test):.3f}')
+    
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+
+    # Confusion Matrix
+    print("\nConfusion Matrix:")
+    print(confusion_matrix(y_test, y_pred))
+   
+    
+def svn_classification(df, target, feature_selection_method=None):
+    # Separate features and target
+    y = df[target]
+    y = np.argmax(y, axis=1)
+    X = df.drop(target, axis=1)
+    
+    if feature_selection_method:
+        X = feature_selection_method(X)
+        
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=101)
+
+    # Initialize the model
+    model = SVC()
+    
+    # Define the parameter grid
+    param_grid = {
+        'C': [0.1, 1, 10],  # Regularization parameter
+        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],  # Kernel type
+        'degree': [2, 3, 4],  # Degree for poly kernels
+        'gamma': ['scale', 'auto']  # Kernel coefficient
+    }
+
+    # Perform GridSearchCV
+    grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, verbose=2, n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+
+    # Best parameters and model
+    best_model = grid_search.best_estimator_
+    print(f"Best Parameters: {grid_search.best_params_}")
+    
+    # Predict on the test set
+    y_pred = best_model.predict(X_test)
+
+    # Evaluate the model
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.2f}")
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+
+    # Confusion Matrix
+    print("\nConfusion Matrix:")
+    print(confusion_matrix(y_test, y_pred))
+        
     
     
 
@@ -455,8 +471,12 @@ df = clean_data()
 
 # do_regression(df, 'Energy (kWh)', feature_selection_method=vif)
 
-random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='stacking')
+# random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='stacking')
 
 # multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
 # naive_bayes_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+
+# knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+
+svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
