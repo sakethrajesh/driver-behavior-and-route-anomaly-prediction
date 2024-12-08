@@ -409,10 +409,8 @@ def multinomial_logistic_regression(df, target, feature_selection_method=None):
     
     X_train, X_test, y_train, y_test = get_train_test_df(df, target)
     
-    # Initialize multinomial logistic regression model
     logModel = LogisticRegression()
     
-    # Parameter grid for GridSearchCV
     param_grid = {
         'penalty': ['l2'],
         'C': np.logspace(-4, 4, 20),
@@ -420,10 +418,8 @@ def multinomial_logistic_regression(df, target, feature_selection_method=None):
         'max_iter': [5000, 10000]
     }
     
-    # Perform Grid Search for hyperparameter tuning
     clf = GridSearchCV(logModel, param_grid=param_grid, cv=3, verbose=2, n_jobs=-1)
     
-    # Fit the model on training data
     clf.fit(X_train, y_train)
     
     # Best model after grid search
@@ -432,10 +428,14 @@ def multinomial_logistic_regression(df, target, feature_selection_method=None):
     
     # Evaluate the model on test data
     y_pred = best_model.predict(X_test)
-    test_accuracy = accuracy_score(y_test, y_pred)
-    print(f'Accuracy on test data: {test_accuracy:.3f}')
     
-    return best_model
+    print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
+    print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
+    
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+
+    
+    
 
 def random_forest_classification(df, target, feature_selection_method=None, method=None):
     
@@ -469,14 +469,17 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
     elif method == 'stacking':
         rf_Model = StackingClassifier(estimator=rf_Model, final_estimator=rf_Model)
     
-    rf_Grid = GridSearchCV(estimator = rf_Model, param_grid = {}, cv = 3, verbose=2, n_jobs = -1)
+    grid_search = GridSearchCV(estimator = rf_Model, param_grid = {}, cv = 3, verbose=2, n_jobs = -1)
     
-    rf_Grid.fit(X_train, y_train)
+    grid_search.fit(X_train, y_train)
     
-    print(f'Best Parameters: {rf_Grid.best_params_}')
+    best_model = grid_search.best_estimator_
+    print(f'Best Parameters: {grid_search.best_params_}')
     
-    print (f'Train Accuracy - : {rf_Grid.score(X_train,y_train):.3f}')
-    print (f'Test Accuracy - : {rf_Grid.score(X_test,y_test):.3f}')
+    print (f'Train Accuracy - : {grid_search.score(X_train,y_train):.3f}')
+    print (f'Test Accuracy - : {grid_search.score(X_test,y_test):.3f}')
+    
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
     
 
 def naive_bayes_classification(df, target, feature_selection_method=None):
@@ -487,14 +490,20 @@ def naive_bayes_classification(df, target, feature_selection_method=None):
     
     param_grid = {'var_smoothing': np.logspace(0,-9, num=100)}
 
-    rf_Grid = GridSearchCV(estimator = model, param_grid = param_grid, cv = 3, verbose=2, n_jobs = 4)
+    grid_search = GridSearchCV(estimator = model, param_grid = param_grid, cv = 3, verbose=2, n_jobs = 4)
 
-    rf_Grid.fit(X_train, y_train)
+    grid_search.fit(X_train, y_train)
     
-    print(f'Best Parameters: {rf_Grid.best_params_}')
+    best_model = grid_search.best_estimator_
+    print(f"Best Parameters: {grid_search.best_params_}")
     
-    print(f'Train Accuracy - : {rf_Grid.score(X_train, y_train):.3f}')
-    print(f'Test Accuracy - : {rf_Grid.score(X_test, y_test):.3f}')
+    y_pred = best_model.predict(X_test)
+    
+    print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
+    print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
+    
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+
     
 
 def knn_classification(df, target, feature_selection_method=None):
@@ -512,36 +521,32 @@ def knn_classification(df, target, feature_selection_method=None):
     # Perform GridSearchCV
     grid_search = GridSearchCV(estimator=knn, param_grid=param_grid, cv=5, verbose=2, n_jobs=-1)
     grid_search.fit(X_train, y_train)
-    
-    y_pred = grid_search.predict(X_test)
 
     # Best parameters and model
-    best_knn = grid_search.best_estimator_
+    best_model = grid_search.best_estimator_
     print(f"Best Parameters: {grid_search.best_params_}")
     
-    # print(f'Train Accuracy - : {rf_Grid.score(X_train, y_train):.3f}')
-    # print(f'Test Accuracy - : {rf_Grid.score(X_test, y_test):.3f}')
+    y_pred = best_model.predict(X_test)
     
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
+    print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
+    print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
+    
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
 
-    # Confusion Matrix
-    print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
    
     
 def svn_classification(df, target, feature_selection_method=None):
     X_train, X_test, y_train, y_test = get_train_test_df(df, target)
 
     # Initialize the model
-    model = SVC()
+    model = SVC(probability=True, random_state=42)
     
     # Define the parameter grid
     param_grid = {
-        # 'C': [0.1, 1, 10],  # Regularization parameter
-        # 'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],  # Kernel type
-        # 'degree': [2, 3, 4],  # Degree for poly kernels
-        # 'gamma': ['scale', 'auto']  # Kernel coefficient
+        'C': [0.1, 1, 10],  # Regularization parameter
+        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],  # Kernel type
+        'degree': [2, 3, 4],  # Degree for poly kernels
+        'gamma': ['scale', 'auto']  # Kernel coefficient
     }
 
     # Perform GridSearchCV
@@ -645,14 +650,14 @@ df = clean_data()
 
 # do_regression(df, 'Energy (kWh)', feature_selection_method=None)
 
-# random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='stacking')
-
 # multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+
+# random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='bagging')
 
 # naive_bayes_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
 # knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+# svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
 # decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='post')
