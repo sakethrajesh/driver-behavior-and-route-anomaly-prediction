@@ -676,7 +676,7 @@ sys.stdout = log_file
 
 df = clean_data()
 
-# do_regression(df, 'Energy (kWh)', feature_selection_method=pca)
+do_regression(df, 'Total Duration (seconds)', feature_selection_method=pca)
 
 multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
