@@ -1,3 +1,6 @@
+from datetime import datetime
+import inspect
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -34,10 +37,8 @@ numerical_features = [
 drop_features = [
     # fully null columns
     'EVSE ID', 'County', 'System S/N', 'Model Number', 
-    
-    # unnessary columns
+    # unnecessary columns
     'User ID', 'MAC Address', 'Org Name', 'Plug In Event Id',
-    
     # missing values
     'Driver Postal Code',
 ]
@@ -48,7 +49,7 @@ standardized_scaler = StandardScaler()
 
 def clean_data():
     df = pd.read_csv('dataset/EVChargingWithWeather.csv')
-    df = df.head(500)
+    df = df.head(50)
 
     # Convert time-based features to seconds
     df['Total Duration (seconds)'] = pd.to_timedelta(
@@ -80,7 +81,6 @@ def clean_data():
             
     df.drop(datetime_columns, axis=1, inplace=True)
 
-    # df = pd.get_dummies(df, columns=['Transaction Date (Pacific Time)_is_weekend', 'End Date_is_weekend', 'Start Date_is_weekend', ],drop_first=True)
     df = pd.get_dummies(df, columns=['Station Name', 'Start Time Zone', 'End Time Zone', 'Port Type',
         'Plug Type', 'Address 1', 'City', 'State/Province', 'Country',
         'Currency', 'Ended By', 'Postal Code', 'Port Number'],drop_first=True)
@@ -109,7 +109,7 @@ def get_train_test_df(df, target, feature_selection_method=None):
     
     return X_train, X_test, y_train, y_test
 
-def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test, pos_label=1):
+def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test, caller, pos_label=1):
     """
     Comprehensive evaluation of a binary classification model.
     
@@ -165,7 +165,8 @@ def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f"Confusion_M_{caller}_{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+
     results['confusion_matrix'] = cm
     
     # Compute key metrics
@@ -206,7 +207,7 @@ def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic (ROC) Curve')
     plt.legend(loc="lower right")
-    plt.show()
+    plt.savefig(f"ROC_{caller}_{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
     
     results['roc_auc'] = roc_auc
     results['fpr'] = fpr
@@ -224,7 +225,7 @@ def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test
     plt.xlabel('Recall')
     plt.ylabel('Precision')
     plt.title(f'Precision-Recall curve (AP = {avg_precision:.2f})')
-    plt.show()
+    plt.savefig(f"Per_Re_{caller}_{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
     
     results['avg_precision'] = avg_precision
     
@@ -290,7 +291,7 @@ def pca(df):
     plt.title("PCA - Explained Variance Ratio")
     plt.xlabel("Principal Component")
     plt.ylabel("Explained Variance Ratio")
-    plt.show()
+    plt.savefig(f"{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
 
     print("\nCumulative Explained Variance:")
     print(np.cumsum(pca.explained_variance_ratio_))
@@ -325,7 +326,7 @@ def svd(df):
     plt.title("SVD - Singular Values")
     plt.xlabel("Singular Value Index")
     plt.ylabel("Singular Value Magnitude")
-    plt.show()
+    plt.savefig(f"{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
 
     print("\nCondition Number of the Matrix:")
     # print(np.linalg.cond(X))
@@ -371,25 +372,19 @@ def do_regression(df, target, feature_selection_method=None):
     X = df.drop(columns=[target])  # All features except the target
     y = df[target]
 
-    # Train-test split (80-20 split)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    # Initialize the Linear Regression model
     model = LinearRegression()
 
-    # Train the regression model
     model.fit(X_train, y_train)
 
-    # Print model coefficients (Optional)
     print(f"Coefficients: {model.coef_}")
     print(f"Intercept: {model.intercept_}")
 
-    # Predict on test data
     y_pred = model.predict(X_test)
 
-    # Plot Actual vs Predicted
     plt.figure(figsize=(10, 6))
     plt.plot(y_test.values, label="Actual", marker="o")
     plt.plot(y_pred, label="Predicted", marker="x")
@@ -397,9 +392,8 @@ def do_regression(df, target, feature_selection_method=None):
     plt.title("Actual vs Predicted")
     plt.xlabel("Sample")
     plt.ylabel(target)
-    plt.show()
+    plt.savefig(f"{inspect.currentframe().f_code.co_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
 
-    # Calculate additional regression metrics
     mse = mean_squared_error(y_test, y_pred)
     print(f"Mean Squared Error: {mse}")
 
@@ -432,7 +426,7 @@ def multinomial_logistic_regression(df, target, feature_selection_method=None):
     print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
     print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
     
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
 
     
     
@@ -479,7 +473,7 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
     print (f'Train Accuracy - : {grid_search.score(X_train,y_train):.3f}')
     print (f'Test Accuracy - : {grid_search.score(X_test,y_test):.3f}')
     
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
     
 
 def naive_bayes_classification(df, target, feature_selection_method=None):
@@ -502,7 +496,7 @@ def naive_bayes_classification(df, target, feature_selection_method=None):
     print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
     print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
     
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
 
     
 
@@ -531,7 +525,7 @@ def knn_classification(df, target, feature_selection_method=None):
     print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
     print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
     
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
 
    
     
@@ -564,7 +558,7 @@ def svn_classification(df, target, feature_selection_method=None):
     print(f'Train Accuracy - : {best_model.score(X_train, y_train):.3f}')
     print(f'Test Accuracy - : {accuracy_score(y_test, y_pred):.3f}')
     
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
 
     
 def decision_tree_classification(df, target, pruning_method, feature_selection_method=None):
@@ -619,7 +613,7 @@ def decision_tree_classification(df, target, pruning_method, feature_selection_m
         plt.title("Accuracy vs. Effective Alpha")
         plt.legend()
         plt.grid()
-        plt.show()
+        plt.savefig(f"{inspect.currentframe().f_code.co_name}_post_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
 
         # Select the best tree based on validation/test performance
         best_tree_index = np.argmax(test_scores)
@@ -634,7 +628,7 @@ def decision_tree_classification(df, target, pruning_method, feature_selection_m
         best_model = model
     
     # Evaluate the model
-    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test)
+    evaluate_binary_classification_model(best_model, X_train, X_test, y_train, y_test, caller=inspect.currentframe().f_code.co_name)
         
         
         
@@ -644,20 +638,24 @@ def decision_tree_classification(df, target, pruning_method, feature_selection_m
     
     
 
-    
+log_file = open(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_output.log", "w")
+sys.stdout = log_file
 
 df = clean_data()
 
-# do_regression(df, 'Energy (kWh)', feature_selection_method=None)
+do_regression(df, 'Energy (kWh)', feature_selection_method=pca)
 
-# multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-# random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='bagging')
+random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='boosting')
 
-# naive_bayes_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+naive_bayes_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-# knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-# svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-# decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='post')
+decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='post')
+
+sys.stdout = sys.__stdout__
+log_file.close()
