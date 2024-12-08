@@ -19,6 +19,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import accuracy_score
 import seaborn as sns
+from scipy.stats import zscore
 
 
 # Global Variables
@@ -49,7 +50,7 @@ standardized_scaler = StandardScaler()
 
 def clean_data():
     df = pd.read_csv('dataset/EVChargingWithWeather.csv')
-    df = df.head(50)
+    df = df.head(500)
 
     # Convert time-based features to seconds
     df['Total Duration (seconds)'] = pd.to_timedelta(
@@ -88,6 +89,12 @@ def clean_data():
     df['prcp'] = df['prcp'].fillna(df['prcp'].mean())
     
     numerical_cols = df.select_dtypes(include=['number']).columns
+    
+    for col in numerical_cols:
+        df['z_score'] = zscore(df['Total Duration (seconds)'])
+        outliers = df[abs(df['z_score']) > 3]  # Z > 3 is a common threshold
+        df = df[abs(df['z_score']) <= 3]  # Remove outliers
+        
     
     df[numerical_cols] = standardized_scaler.fit_transform(df[numerical_cols])
     
@@ -260,23 +267,42 @@ def evaluate_binary_classification_model(model, X_train, X_test, y_train, y_test
 
 # Feature Selection Using Random Forest
 def random_forest(df, target='Energy (kWh)'):
-    X = df.drop(columns=[target])
+    # Separate features and target
     y = df[target]
+    X = df.drop(target, axis=1)
 
     # Train a random forest model
-    rf = RandomForestRegressor(n_estimators=100, random_state=42)
+    rf = RandomForestRegressor(random_state=42)
     rf.fit(X, y)
-
-    # Get feature importances
-    importance = pd.DataFrame(
-        {'Feature': X.columns, 'Importance': rf.feature_importances_})
-    importance = importance.sort_values(by='Importance', ascending=False)
-
-    print("\nRandom Forest Feature Importances:")
-    print(importance)
-
-    return importance
-
+    
+    # Calculate feature importances
+    feature_importances = rf.feature_importances_
+    feature_names = X.columns
+    importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': feature_importances
+    }).sort_values(by='Importance', ascending=False)
+    
+    # Get the top 5 features
+    top_5_features = importance_df.head(5)['Feature']
+    
+    # Select the top 5 features from the original DataFrame
+    top_5_df = df[top_5_features].copy()
+    
+    # Add the target column back
+    top_5_df[target] = y
+    
+    # Plot feature importances for the top 5 features
+    plt.figure(figsize=(12, 8))
+    plt.barh(importance_df['Feature'][:5], importance_df['Importance'][:5], color='skyblue')
+    plt.xlabel('Importance')
+    plt.ylabel('Feature')
+    plt.title('Top 5 Feature Importances from Random Forest')
+    plt.gca().invert_yaxis()
+    plt.show()
+    
+    # Return the new DataFrame
+    return top_5_df
 
 # Dimensionality Reduction Using PCA
 def pca(df):
@@ -463,7 +489,7 @@ def random_forest_classification(df, target, feature_selection_method=None, meth
     elif method == 'stacking':
         rf_Model = StackingClassifier(estimator=rf_Model, final_estimator=rf_Model)
     
-    grid_search = GridSearchCV(estimator = rf_Model, param_grid = {}, cv = 3, verbose=2, n_jobs = -1)
+    grid_search = GridSearchCV(estimator = rf_Model, param_grid = param_grid, cv = 3, verbose=2, n_jobs = -1)
     
     grid_search.fit(X_train, y_train)
     
@@ -634,18 +660,27 @@ def decision_tree_classification(df, target, pruning_method, feature_selection_m
         
         
         
-        
+# df = clean_data() 
     
-    
+# df = random_forest(df, 'Total Duration (seconds)')
+
+# do_regression(df
+#     # [
+#     # ['Charging Time (seconds)', 'End Date_hour', 'Start Date_hour', 'Transaction Date (Pacific Time)_hour', 'Start Date_minute', 'Total Duration (seconds)']
+#     # ]
+#     , 'Total Duration (seconds)')
+
 
 log_file = open(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_output.log", "w")
 sys.stdout = log_file
 
 df = clean_data()
 
-do_regression(df, 'Energy (kWh)', feature_selection_method=pca)
+# do_regression(df, 'Energy (kWh)', feature_selection_method=pca)
 
 multinomial_logistic_regression(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
+
+random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='bagging')
 
 random_forest_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], method='boosting')
 
@@ -653,9 +688,12 @@ naive_bayes_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehic
 
 knn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
+decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='post')
+
+decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='pre')
+
 svn_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',])
 
-decision_tree_classification(df, ['Ended By_Customer', 'Ended By_Plug Out at Vehicle',], pruning_method='post')
 
 sys.stdout = sys.__stdout__
 log_file.close()
